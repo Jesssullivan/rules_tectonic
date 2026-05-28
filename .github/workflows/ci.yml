@@ -30,8 +30,8 @@ jobs:
           if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
             brew install bazelisk
           else
-            curl -fsSL https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 -o /usr/local/bin/bazel
-            chmod +x /usr/local/bin/bazel
+            sudo curl -fsSL https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 -o /usr/local/bin/bazel
+            sudo chmod +x /usr/local/bin/bazel
           fi
 
       - name: Build everything
