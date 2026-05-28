@@ -1,0 +1,6 @@
+bazel-*
+.bazelrc.user
+MODULE.bazel.lock
+.direnv/
+result
+result-*

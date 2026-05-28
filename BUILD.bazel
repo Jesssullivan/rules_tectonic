@@ -1,0 +1,7 @@
+# Top-level BUILD for rules_tectonic. Public surface lives under //tectonic.
+
+exports_files([
+    "MODULE.bazel",
+    "README.md",
+    "LICENSE",
+])

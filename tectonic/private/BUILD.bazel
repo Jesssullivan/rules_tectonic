@@ -1,0 +1,8 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "platforms.bzl",
+    "tectonic_pdf.bzl",
+    "tectonic_repository.bzl",
+    "tectonic_toolchain.bzl",
+])

@@ -1,0 +1,6 @@
+load("//tectonic:defs.bzl", "tectonic_pdf")
+
+tectonic_pdf(
+    name = "hello",
+    src = "hello.tex",
+)

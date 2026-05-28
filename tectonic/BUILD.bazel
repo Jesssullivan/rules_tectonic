@@ -1,0 +1,39 @@
+"""Public package for rules_tectonic.
+
+Exposes:
+  - //tectonic:toolchain_type: the toolchain type tectonic_pdf depends on.
+  - //tectonic:tectonic_<platform>_toolchain: one toolchain target per supported
+    host platform, each pointing at the prebuilt binary in
+    @tectonic_<platform>//:tectonic.
+"""
+
+load("//tectonic/private:platforms.bzl", "PLATFORMS")
+load("//tectonic/private:tectonic_toolchain.bzl", "tectonic_toolchain")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "defs.bzl",
+    "extensions.bzl",
+])
+
+toolchain_type(name = "toolchain_type")
+
+[
+    tectonic_toolchain(
+        name = "tectonic_{}_impl".format(plat),
+        tectonic = "@tectonic_{}//:tectonic".format(plat),
+    )
+    for plat in PLATFORMS.keys()
+]
+
+[
+    toolchain(
+        name = "tectonic_{}_toolchain".format(plat),
+        toolchain = ":tectonic_{}_impl".format(plat),
+        toolchain_type = ":toolchain_type",
+        exec_compatible_with = spec["exec_compatible_with"],
+        target_compatible_with = spec["exec_compatible_with"],
+    )
+    for plat, spec in PLATFORMS.items()
+]
