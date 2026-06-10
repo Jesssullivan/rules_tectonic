@@ -37,8 +37,25 @@ jobs:
       - name: Build everything
         run: bazel build //...
 
+      - name: Test everything
+        run: bazel test //...
+
+      - name: Check generated API docs
+        run: bazel test //docs:defs_doc_test
+
+      - name: Check Bazel formatting
+        run: bazel run //:buildifier.check
+
       - name: Build the example PDF
         run: bazel build //examples:hello
+
+      - name: Build the bzlmod consumer smoke module
+        working-directory: e2e/bzlmod
+        run: bazel build //...
+
+      - name: Test the bzlmod consumer smoke module
+        working-directory: e2e/bzlmod
+        run: bazel test //...
 
       - name: Verify PDF output
         run: |

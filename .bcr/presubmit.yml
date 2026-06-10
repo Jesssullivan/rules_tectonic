@@ -1,0 +1,12 @@
+bcr_test_module:
+  module_path: "e2e/bzlmod"
+  matrix:
+    platform: ["rockylinux8", "debian10", "ubuntu2004", "macos"]
+    bazel: ["8.x"]
+  tasks:
+    test_examples:
+      name: "Test consumer smoke module"
+      platform: ${{ platform }}
+      bazel: ${{ bazel }}
+      test_targets:
+        - "//..."

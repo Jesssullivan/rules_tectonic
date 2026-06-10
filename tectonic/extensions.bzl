@@ -3,7 +3,7 @@
 A consumer module declares the version once via:
 
     tectonic_toolchains = use_extension("@rules_tectonic//tectonic:extensions.bzl", "tectonic_toolchains_ext")
-    tectonic_toolchains.from_version(version = "0.16.0")
+    tectonic_toolchains.from_version(version = "0.16.9")
 
 Per-platform repos `@tectonic_linux_amd64`, `@tectonic_linux_arm64`,
 `@tectonic_darwin_amd64`, `@tectonic_darwin_arm64` are then created, each
@@ -14,7 +14,7 @@ references those repos from its toolchain declarations.
 load("//tectonic/private:platforms.bzl", "PLATFORMS", "RELEASE_INTEGRITY")
 load("//tectonic/private:tectonic_repository.bzl", "tectonic_repository")
 
-_DEFAULT_VERSION = "0.16.0"
+_DEFAULT_VERSION = "0.16.9"
 
 def _tectonic_toolchains_impl(mctx):
     version = _DEFAULT_VERSION

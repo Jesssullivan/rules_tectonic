@@ -1,7 +1,32 @@
 # Top-level BUILD for rules_tectonic. Public surface lives under //tectonic.
 
+load("@buildifier_prebuilt//:rules.bzl", "buildifier")
+
 exports_files([
+    "CHANGELOG.md",
     "MODULE.bazel",
     "README.md",
     "LICENSE",
 ])
+
+_BUILDIFIER_EXCLUDES = [
+    "./.direnv/*",
+    "./.git/*",
+    "./.huskycat/*",
+    "./bazel-*",
+    "./e2e/bzlmod/bazel-*",
+]
+
+buildifier(
+    name = "buildifier.check",
+    exclude_patterns = _BUILDIFIER_EXCLUDES,
+    lint_mode = "warn",
+    mode = "diff",
+)
+
+buildifier(
+    name = "buildifier.fix",
+    exclude_patterns = _BUILDIFIER_EXCLUDES,
+    lint_mode = "fix",
+    mode = "fix",
+)

@@ -4,3 +4,4 @@ MODULE.bazel.lock
 .direnv/
 result
 result-*
+dist/

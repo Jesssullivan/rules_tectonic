@@ -45,6 +45,12 @@ PLATFORMS = {
 # Empty strings let Bazel report the actual hash on first download attempt;
 # update this table as new versions are pinned.
 RELEASE_INTEGRITY = {
+    "0.16.9": {
+        "linux_amd64": "sha256-YLE6CCauetnONLSi3wa/8s/Ppt2oqRVHfAy7hOGkqQI=",
+        "linux_arm64": "sha256-+ao5AX29UfER/bk92iIheMvlHIGTUI/FZ7UjzHT/+cE=",
+        "darwin_amd64": "sha256-ediDn6NZS/6psr8qwKBFW8xNDelWpeXEAxB+mnL3noY=",
+        "darwin_arm64": "sha256-7bZ8YaunaCifbaRByeb1I8+v9PiypXCFI+8pxUP46I4=",
+    },
     "0.16.0": {
         "linux_amd64": "sha256-u7dymLnRorkR5yXLBExdkkncZ0PwzUifTQzzSKShhJE=",
         "linux_arm64": "sha256-YPhCHB2jBQzHZuJasHAVMelYPM+gbWoYT9TtkCHGtCc=",

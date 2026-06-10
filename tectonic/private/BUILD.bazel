@@ -1,3 +1,5 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
@@ -6,3 +8,24 @@ exports_files([
     "tectonic_repository.bzl",
     "tectonic_toolchain.bzl",
 ])
+
+bzl_library(
+    name = "platforms_bzl",
+    srcs = ["platforms.bzl"],
+)
+
+bzl_library(
+    name = "tectonic_pdf_bzl",
+    srcs = ["tectonic_pdf.bzl"],
+)
+
+bzl_library(
+    name = "tectonic_repository_bzl",
+    srcs = ["tectonic_repository.bzl"],
+    deps = [":platforms_bzl"],
+)
+
+bzl_library(
+    name = "tectonic_toolchain_bzl",
+    srcs = ["tectonic_toolchain.bzl"],
+)

@@ -1,0 +1,57 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without the v prefix, for example 0.2.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install bazelisk
+        run: |
+          sudo curl -fsSL https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 -o /usr/local/bin/bazel
+          sudo chmod +x /usr/local/bin/bazel
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate
+        run: |
+          bazel run //:buildifier.check
+          bazel build //...
+          bazel test //...
+          bazel test //docs:defs_doc_test
+          bazel build //examples:hello --output_groups=logs
+          (cd e2e/bzlmod && bazel build //...)
+          (cd e2e/bzlmod && bazel test //...)
+
+      - name: Create source archive
+        run: scripts/make-release-archive.sh "${{ steps.version.outputs.version }}" dist
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          files: dist/rules_tectonic-${{ steps.version.outputs.tag }}.tar.gz
+          generate_release_notes: true
