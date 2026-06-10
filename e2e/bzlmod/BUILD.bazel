@@ -1,0 +1,37 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("@rules_tectonic//tectonic:defs.bzl", "tectonic_pdf")
+
+tectonic_pdf(
+    name = "hello",
+    src = "hello.tex",
+    reruns = 0,
+    synctex = True,
+    untrusted = True,
+)
+
+filegroup(
+    name = "hello_log",
+    srcs = [":hello"],
+    output_group = "logs",
+)
+
+filegroup(
+    name = "hello_synctex",
+    srcs = [":hello"],
+    output_group = "synctex",
+)
+
+sh_test(
+    name = "hello_outputs_test",
+    srcs = ["verify_outputs.sh"],
+    args = [
+        "hello.pdf",
+        "hello.log",
+        "hello.synctex.gz",
+    ],
+    data = [
+        ":hello",
+        ":hello_log",
+        ":hello_synctex",
+    ],
+)

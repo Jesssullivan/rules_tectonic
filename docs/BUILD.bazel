@@ -1,0 +1,19 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("@stardoc//stardoc:stardoc.bzl", "stardoc")
+
+stardoc(
+    name = "defs_doc",
+    out = "defs.generated.md",
+    input = "//tectonic:defs.bzl",
+    symbol_names = ["tectonic_pdf"],
+    deps = ["//tectonic:defs_bzl"],
+)
+
+sh_test(
+    name = "defs_doc_test",
+    srcs = ["check_defs_docs.sh"],
+    data = [
+        "defs.md",
+        ":defs_doc",
+    ],
+)
