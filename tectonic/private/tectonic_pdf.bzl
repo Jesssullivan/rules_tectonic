@@ -74,6 +74,28 @@ shift
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 
+# Tectonic resolves its bundle/format cache from TECTONIC_CACHE_DIR, falling
+# back to OS cache dirs derived from the invoking user's home. Inside Bazel
+# sandboxes that home is typically absent or mounted read-only, so the first
+# cache write fails the compile ("Read-only file system (os error 30)").
+# Default to an action-private cache inside the staging dir so the action
+# never depends on a writable user home. A TECTONIC_CACHE_DIR threaded in by
+# the consumer (e.g. --action_env=TECTONIC_CACHE_DIR=... paired with a
+# --sandbox_writable_path for it) still wins, for persistent caching.
+if [[ -z "${TECTONIC_CACHE_DIR:-}" ]]; then
+  TECTONIC_CACHE_DIR="$STAGE/cache"
+fi
+export TECTONIC_CACHE_DIR
+mkdir -p "$TECTONIC_CACHE_DIR"
+
+# Keep other home-derived lookups (user config, XDG dirs) action-private too,
+# so results do not vary with the invoking user's dotfiles.
+export HOME="$STAGE/home"
+export XDG_CACHE_HOME="$STAGE/home/.cache"
+export XDG_CONFIG_HOME="$STAGE/home/.config"
+export XDG_DATA_HOME="$STAGE/home/.local/share"
+mkdir -p "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
+
 cmd=("$TECTONIC" -X compile "$SRC" --outdir "$STAGE" --keep-logs)
 if [[ -n "$FORMAT" ]]; then
   cmd+=("--format" "$FORMAT")
@@ -179,5 +201,12 @@ tectonic_pdf = rule(
         ),
     },
     toolchains = [TOOLCHAIN_TYPE],
-    doc = "Compile a LaTeX source into a PDF using tectonic.",
+    doc = """Compile a LaTeX source into a PDF using tectonic.
+
+The compile action gives Tectonic an action-private, writable cache and home
+(`TECTONIC_CACHE_DIR`, `HOME`, and XDG dirs point into the action's staging
+directory), so it works inside Bazel sandboxes where the user home is absent or
+read-only. Bundle resources are fetched per action unless a consumer threads a
+persistent `TECTONIC_CACHE_DIR` through `--action_env` (with a matching
+`--sandbox_writable_path`), or pins resources via `bundle`/`only_cached`.""",
 )

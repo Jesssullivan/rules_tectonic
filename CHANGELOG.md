@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Fix `tectonic_pdf` failing with `Read-only file system (os error 30)` inside
+  Bazel sandboxes: the compile action now points `TECTONIC_CACHE_DIR`, `HOME`,
+  and the XDG dirs at an action-private staging directory instead of relying on
+  a writable user home. An externally provided `TECTONIC_CACHE_DIR` (e.g. via
+  `--action_env`) still takes precedence for persistent caching.
+
 ## 0.2.0 - 2026-06-09
 
 - Add BCR templates and a standalone bzlmod consumer smoke module.

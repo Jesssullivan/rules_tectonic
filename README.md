@@ -75,6 +75,7 @@ bazel build //path/to:my_paper --output_groups=logs
 - Each repo downloads the matching prebuilt tectonic binary from `tectonic-typesetting/tectonic` GitHub releases.
 - A toolchain is registered per platform; Bazel picks the right one based on the exec platform.
 - `tectonic_pdf` is a leaf rule that invokes `tectonic -X compile <src> --outdir <tmpdir>` and moves the resulting PDF to the declared Bazel output.
+- The compile action points `TECTONIC_CACHE_DIR`, `HOME`, and the XDG dirs at an action-private staging directory, so Tectonic's bundle/format cache works inside Bazel sandboxes where the user home is absent or mounted read-only. Bundle resources are fetched per action; to share a persistent cache instead, thread `--action_env=TECTONIC_CACHE_DIR=<dir>` (with a matching `--sandbox_writable_path=<dir>`), or avoid network entirely with `bundle` / `only_cached`.
 
 ## Overriding the tectonic version
 
