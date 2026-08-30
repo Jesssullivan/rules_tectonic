@@ -150,7 +150,11 @@ jobs:
             ([.rules[].type] | index("deletion")) != null
           ' <<<"${ruleset_json}" >/dev/null
 
-          if gh release view "${RELEASE_TAG}" --repo "${GH_REPO}" >/dev/null 2>&1; then
+          existing_release_rows="$(
+            gh api --paginate "repos/${GH_REPO}/releases?per_page=100" \
+              --jq '.[] | select(.tag_name == env.RELEASE_TAG) | [.id, .tag_name, .draft, .name] | @tsv'
+          )"
+          if [[ -n "${existing_release_rows}" ]]; then
             echo "release: a release or draft already exists; refusing automatic mutation; inspect it explicitly" >&2
             exit 72
           fi
@@ -164,8 +168,20 @@ jobs:
             --generate-notes \
             --title "${RELEASE_TAG}"
 
-          draft_json="$(gh api "repos/${GH_REPO}/releases/tags/${RELEASE_TAG}")"
-          jq -e --arg tag "${RELEASE_TAG}" '.draft == true and .tag_name == $tag' \
+          draft_release_rows="$(
+            gh api --paginate "repos/${GH_REPO}/releases?per_page=100" \
+              --jq '.[] | select(.tag_name == env.RELEASE_TAG) | [.id, .tag_name, .draft, .name] | @tsv'
+          )"
+          [[ -n "${draft_release_rows}" && "${draft_release_rows}" != *$'\n'* ]]
+          IFS=$'\t' read -r release_id indexed_tag indexed_draft indexed_name <<<"${draft_release_rows}"
+          [[ "${release_id}" =~ ^[0-9]+$ ]]
+          [[ "${indexed_tag}" == "${RELEASE_TAG}" ]]
+          [[ "${indexed_draft}" == "true" ]]
+          [[ "${indexed_name}" == "${RELEASE_TAG}" ]]
+
+          draft_json="$(gh api "repos/${GH_REPO}/releases/${release_id}")"
+          jq -e --arg tag "${RELEASE_TAG}" --argjson id "${release_id}" \
+            '.id == $id and .draft == true and .tag_name == $tag and .name == $tag' \
             <<<"${draft_json}" >/dev/null
           asset_digest="$(jq -er --arg name "$(basename "${archive}")" '.assets[] | select(.name == $name) | .digest' \
             <<<"${draft_json}")"
@@ -186,8 +202,9 @@ jobs:
           [[ "$(jq -er '.object.sha' <<<"${final_ref_json}")" == "${EXPECTED_TAG_OBJECT}" ]]
           [[ "$(gh api "repos/${GH_REPO}/git/ref/heads/main" --jq '.object.sha')" == "${EXPECTED_TARGET}" ]]
 
-          gh release edit "${RELEASE_TAG}" --repo "${GH_REPO}" --draft=false
-          published_json="$(gh api "repos/${GH_REPO}/releases/tags/${RELEASE_TAG}")"
+          published_json="$(
+            gh api "repos/${GH_REPO}/releases/${release_id}" -X PATCH -F draft=false
+          )"
           jq -e --arg tag "${RELEASE_TAG}" \
             '.draft == false and .immutable == true and .tag_name == $tag' \
             <<<"${published_json}" >/dev/null
