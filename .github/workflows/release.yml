@@ -64,8 +64,9 @@ jobs:
           jq -e '
             .target == "tag" and
             .enforcement == "active" and
-            (.bypass_actors | length) == 0 and
-            (.conditions.ref_name.include | index("refs/tags/v*")) != null and
+            .bypass_actors == [] and
+            .conditions.ref_name.include == ["refs/tags/v*"] and
+            .conditions.ref_name.exclude == [] and
             ([.rules[].type] | index("update")) != null and
             ([.rules[].type] | index("deletion")) != null
           ' <<<"${ruleset_json}" >/dev/null
@@ -141,14 +142,15 @@ jobs:
           jq -e '
             .target == "tag" and
             .enforcement == "active" and
-            (.bypass_actors | length) == 0 and
-            (.conditions.ref_name.include | index("refs/tags/v*")) != null and
+            .bypass_actors == [] and
+            .conditions.ref_name.include == ["refs/tags/v*"] and
+            .conditions.ref_name.exclude == [] and
             ([.rules[].type] | index("update")) != null and
             ([.rules[].type] | index("deletion")) != null
           ' <<<"${ruleset_json}" >/dev/null
 
           if gh release view "${RELEASE_TAG}" --repo "${GH_REPO}" >/dev/null 2>&1; then
-            echo "release: a release or draft already exists; refusing automatic mutationinspect it explicitly" >&2
+            echo "release: a release or draft already exists; refusing automatic mutation; inspect it explicitly" >&2
             exit 72
           fi
 
@@ -167,6 +169,17 @@ jobs:
           asset_digest="$(jq -er --arg name "$(basename "${archive}")" '.assets[] | select(.name == $name) | .digest' \
             <<<"${draft_json}")"
           [[ "${asset_digest}" == "sha256:${archive_sha}" ]]
+
+          final_ruleset_json="$(gh api "repos/${GH_REPO}/rulesets/${TAG_RULESET_ID}")"
+          jq -e '
+            .target == "tag" and
+            .enforcement == "active" and
+            .bypass_actors == [] and
+            .conditions.ref_name.include == ["refs/tags/v*"] and
+            .conditions.ref_name.exclude == [] and
+            ([.rules[].type] | index("update")) != null and
+            ([.rules[].type] | index("deletion")) != null
+          ' <<<"${final_ruleset_json}" >/dev/null
 
           final_ref_json="$(gh api "repos/${GH_REPO}/git/ref/tags/${RELEASE_TAG}")"
           [[ "$(jq -er '.object.type' <<<"${final_ref_json}")" == "tag" ]]
