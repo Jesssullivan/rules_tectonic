@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.2.2 - 2026-08-30
+
+- Guard `tectonic_pdf` action cleanup behind a fresh-parent ownership marker,
+  exact fixed-child containment checks, symlink/root/HOME refusal, and
+  non-recursive parent removal. The EXIT handler preserves the original compile
+  status even if cleanup refuses.
+- Add adversarial shell coverage for successful and failed actions plus empty,
+  parent-as-target, outside, root, HOME, and symlink cleanup substitutions.
+- Align the module, consumer example, installation, and release documentation
+  on version `0.2.2`.
+
+## 0.2.1 - 2026-07-14
+
 - Fix `tectonic_pdf` failing with `Read-only file system (os error 30)` inside
   Bazel sandboxes: the compile action now points `TECTONIC_CACHE_DIR`, `HOME`,
   and the XDG dirs at an action-private staging directory instead of relying on

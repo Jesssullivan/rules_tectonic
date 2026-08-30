@@ -8,18 +8,7 @@ Tectonic is self-contained, fast, and pulls TeX Live packages on demand — no s
 
 ```python
 # MODULE.bazel
-bazel_dep(name = "rules_tectonic", version = "0.2.0")
-```
-
-During early development you can pin to a git commit via `git_override`:
-
-```python
-bazel_dep(name = "rules_tectonic", version = "0.2.0")
-git_override(
-    module_name = "rules_tectonic",
-    remote = "https://github.com/jesssullivan/rules_tectonic.git",
-    commit = "<sha>",
-)
+bazel_dep(name = "rules_tectonic", version = "0.2.2")
 ```
 
 ## Usage
@@ -137,7 +126,7 @@ bazel test //docs:defs_doc_test
 Release archives are generated with:
 
 ```sh
-scripts/make-release-archive.sh 0.2.0 dist
+scripts/make-release-archive.sh 0.2.2 dist
 ```
 
 See [docs/RELEASING.md](docs/RELEASING.md) for the maintainer runbook.

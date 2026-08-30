@@ -16,7 +16,7 @@ def _tectonic_pdf_impl(ctx):
     synctex_out = ctx.actions.declare_file(ctx.attr.name + ".synctex.gz") if ctx.attr.synctex else None
 
     inputs = depset(
-        direct = [src] + ([ctx.file.bundle] if ctx.file.bundle else []),
+        direct = [src, ctx.file._stage_cleanup_lib] + ([ctx.file.bundle] if ctx.file.bundle else []),
         transitive = [
             depset(ctx.files.deps),
             depset(ctx.files.data),
@@ -43,6 +43,10 @@ def _tectonic_pdf_impl(ctx):
     ctx.actions.run_shell(
         command = """
 set -euo pipefail
+STAGE_CLEANUP_LIB="$1"
+shift
+# shellcheck source=stage_cleanup.sh
+source "$STAGE_CLEANUP_LIB"
 TECTONIC="$1"
 shift
 SRC="$1"
@@ -71,8 +75,11 @@ SYNCTEX="$1"
 shift
 UNTRUSTED="$1"
 shift
-STAGE=$(mktemp -d)
-trap 'rm -rf "$STAGE"' EXIT
+tectonic_stage_prepare
+STAGE_PARENT="$TECTONIC_STAGE_PARENT"
+STAGE="$TECTONIC_STAGE"
+STAGE_TOKEN="$TECTONIC_STAGE_TOKEN"
+trap 'tectonic_stage_exit "$?" "$STAGE_PARENT" "$STAGE" "$STAGE_TOKEN"' EXIT
 
 # Tectonic resolves its bundle/format cache from TECTONIC_CACHE_DIR, falling
 # back to OS cache dirs derived from the invoking user's home. Inside Bazel
@@ -125,6 +132,7 @@ if [[ -n "$SYNCTEX_OUT" ]]; then
 fi
 """,
         arguments = [
+            ctx.file._stage_cleanup_lib.path,
             tectonic_executable.path,
             src.path,
             out.path,
@@ -159,6 +167,10 @@ fi
 tectonic_pdf = rule(
     implementation = _tectonic_pdf_impl,
     attrs = {
+        "_stage_cleanup_lib": attr.label(
+            default = Label("//tectonic/private:stage_cleanup_lib"),
+            allow_single_file = True,
+        ),
         "src": attr.label(
             mandatory = True,
             allow_single_file = [".tex"],

@@ -11,7 +11,7 @@ registered automatically. Override the tectonic version via the
 
 module(
     name = "rules_tectonic",
-    version = "0.2.1",
+    version = "0.2.2",
     compatibility_level = 1,
 )
 

@@ -31,11 +31,11 @@ After committing the release changes, create the BCR-compatible source archive
 locally:
 
 ```sh
-scripts/make-release-archive.sh 0.2.0 dist
+scripts/make-release-archive.sh 0.2.2 dist
 ```
 
-This creates `dist/rules_tectonic-v0.2.0.tar.gz` with the archive prefix
-`rules_tectonic-0.2.0/`, matching `.bcr/source.template.json`.
+This creates `dist/rules_tectonic-v0.2.2.tar.gz` with the archive prefix
+`rules_tectonic-0.2.2/`, matching `.bcr/source.template.json`.
 
 The archive is generated from committed `HEAD`, matching the tag-driven GitHub
 release workflow. Uncommitted local edits are intentionally not included.
@@ -45,8 +45,8 @@ release workflow. Uncommitted local edits are intentionally not included.
 Create and push a tag:
 
 ```sh
-git tag v0.2.0
-git push origin v0.2.0
+git tag -s v0.2.2 -m "rules_tectonic v0.2.2"
+git push origin v0.2.2
 ```
 
 The `release` workflow validates the repo, builds the source archive, and
@@ -62,8 +62,8 @@ After the release asset exists, compute its SRI value and render a local staging
 tree:
 
 ```sh
-scripts/render-bcr-entry.sh 0.2.0 sha256-... dist/bcr
+scripts/render-bcr-entry.sh 0.2.2 sha256-... dist/bcr
 ```
 
-This writes `dist/bcr/modules/rules_tectonic/0.2.0/` for inspection or manual
+This writes `dist/bcr/modules/rules_tectonic/0.2.2/` for inspection or manual
 copying into a BCR fork. It does not push or open a PR.
