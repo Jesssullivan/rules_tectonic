@@ -132,6 +132,25 @@ expect_refusal "outside substitution" tectonic_stage_cleanup "$OUTSIDE_PARENT" "
 
 assert_exists "$VALID_SENTINEL"
 assert_exists "$OUTSIDE_SENTINEL"
+
+# The outer validator succeeds, then this test-only seam mutates the ownership
+# marker. The explicit inner recheck must refuse before the recursive child
+# delete; both the stage sentinel and the outside sentinel must survive.
+INNER_SEAM_RECORD="$OUTSIDE/inner-seam-called"
+tectonic_stage_cleanup_test_seam() {
+  local parent="$1"
+  printf 'called\n' >"$INNER_SEAM_RECORD"
+  printf 'mutated-after-validation\n' >"$parent/.rules_tectonic_stage_owner"
+}
+expect_refusal "post-validation marker mutation" tectonic_stage_cleanup "$VALID_PARENT" "$VALID_STAGE" "$VALID_TOKEN"
+assert_exists "$INNER_SEAM_RECORD"
+assert_exists "$VALID_SENTINEL"
+assert_exists "$OUTSIDE_SENTINEL"
+printf '%s\n' "$VALID_TOKEN" >"$VALID_PARENT/.rules_tectonic_stage_owner"
+tectonic_stage_cleanup_test_seam() {
+  :
+}
+
 rmdir -- "$OUTSIDE_STAGE"
 rm -f -- "$OUTSIDE_PARENT/.rules_tectonic_stage_owner"
 rmdir -- "$OUTSIDE_PARENT"
@@ -181,7 +200,7 @@ rmdir -- "$REFUSAL_PARENT/stage"
 rm -f -- "$REFUSAL_PARENT/.rules_tectonic_stage_owner" "$REFUSAL_PARENT/unexpected"
 rmdir -- "$REFUSAL_PARENT"
 
-rm -f -- "$UNSET_TMPDIR_RECORD" "$SUCCESS_RECORD" "$FAILURE_RECORD" "$REFUSAL_RECORD" "$OUTSIDE_SENTINEL"
+rm -f -- "$UNSET_TMPDIR_RECORD" "$SUCCESS_RECORD" "$FAILURE_RECORD" "$REFUSAL_RECORD" "$INNER_SEAM_RECORD" "$OUTSIDE_SENTINEL"
 rmdir -- "$FAKE_HOME"
 rmdir -- "$OUTSIDE"
 printf 'stage_cleanup_test: PASS\n'

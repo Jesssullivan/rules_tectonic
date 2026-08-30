@@ -164,27 +164,40 @@ tectonic_stage_validate_cleanup_target() {
   fi
 }
 
+# Tests override this no-op only to force a state change between the outer
+# validator and the immediately-before-delete recheck.
+tectonic_stage_cleanup_test_seam() {
+  :
+}
+
 tectonic_stage_cleanup() {
   local parent="${1-}"
   local stage="${2-}"
   local token="${3-}"
   local marker_token=""
+  local physical_parent=""
 
   tectonic_stage_validate_cleanup_target "$parent" "$stage" "$token" || return $?
+  tectonic_stage_cleanup_test_seam "$parent" "$stage" "$token" || {
+    printf 'rules_tectonic: post-validation cleanup seam failed\n' >&2
+    return 70
+  }
 
-  # Re-establish and re-check the exact relationship immediately before the
-  # only recursive delete. The recursive operand is a fixed relative child;
-  # the fresh parent itself is removed only with non-recursive rmdir.
+  # Bash disables errexit inside compound commands that are the left operand
+  # of ||, including functions reached from that context. Every operation here
+  # therefore has its own explicit failure branch. Re-establish and re-check
+  # the exact relationship immediately before the only recursive delete.
   (
-    set -e
-    cd -P -- "$parent"
-    [[ "$(pwd -P)" == "$parent" ]]
-    [[ ! -L "./stage" && -d "./stage" ]]
-    [[ ! -L "./.rules_tectonic_stage_owner" && -f "./.rules_tectonic_stage_owner" ]]
-    IFS= read -r marker_token <"./.rules_tectonic_stage_owner"
-    [[ -n "$marker_token" && "$marker_token" == "$token" ]]
-    rm -rf -- "./stage"
-    rm -f -- "./.rules_tectonic_stage_owner"
+    cd -P -- "$parent" || exit 70
+    physical_parent="$(pwd -P)" || exit 70
+    [[ "$physical_parent" == "$parent" ]] || exit 70
+    [[ ! -L "./stage" && -d "./stage" ]] || exit 70
+    [[ ! -L "./.rules_tectonic_stage_owner" && -f "./.rules_tectonic_stage_owner" ]] || exit 70
+    IFS= read -r marker_token <"./.rules_tectonic_stage_owner" || exit 70
+    [[ -n "$marker_token" && "$marker_token" == "$token" ]] || exit 70
+    rm -rf -- "./stage" || exit 70
+    rm -f -- "./.rules_tectonic_stage_owner" || exit 70
+    exit 0
   ) || {
     printf 'rules_tectonic: guarded child cleanup failed\n' >&2
     return 70

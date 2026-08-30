@@ -23,14 +23,14 @@ filegroup(
 
 output_files_test(
     name = "hello_outputs_test",
-    expected_files = [
-        "hello.pdf",
-        "hello.log",
-        "hello.synctex.gz",
-    ],
     data = [
         ":hello",
         ":hello_log",
         ":hello_synctex",
+    ],
+    expected_files = [
+        "hello.pdf",
+        "hello.log",
+        "hello.synctex.gz",
     ],
 )
