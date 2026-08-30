@@ -5,8 +5,6 @@ module(
 
 bazel_dep(name = "rules_tectonic", version = "0.2.2")
 
-bazel_dep(name = "rules_shell", version = "0.8.0", dev_dependency = True)
-
 local_path_override(
     module_name = "rules_tectonic",
     path = "../..",

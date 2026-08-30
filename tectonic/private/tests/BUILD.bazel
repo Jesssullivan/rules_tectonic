@@ -2,8 +2,8 @@ load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 package(default_visibility = ["//visibility:private"])
 
-# GraphQL-authored source files are intentionally 0644. Generate the executable
-# test carrier inside Bazel rather than weakening repository signing provenance.
+# The checked-in test source is non-executable; Bazel generates the executable
+# runner so source mode is not part of the test contract.
 genrule(
     name = "stage_cleanup_test_runner",
     srcs = ["stage_cleanup_test.sh"],

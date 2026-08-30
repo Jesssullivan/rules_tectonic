@@ -1,5 +1,5 @@
-load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("@rules_tectonic//tectonic:defs.bzl", "tectonic_pdf")
+load(":output_files_test.bzl", "output_files_test")
 
 tectonic_pdf(
     name = "hello",
@@ -21,10 +21,9 @@ filegroup(
     output_group = "synctex",
 )
 
-sh_test(
+output_files_test(
     name = "hello_outputs_test",
-    srcs = ["verify_outputs.sh"],
-    args = [
+    expected_files = [
         "hello.pdf",
         "hello.log",
         "hello.synctex.gz",
