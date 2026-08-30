@@ -29,3 +29,12 @@ bzl_library(
     name = "tectonic_toolchain_bzl",
     srcs = ["tectonic_toolchain.bzl"],
 )
+
+filegroup(
+    name = "stage_cleanup_lib",
+    srcs = ["stage_cleanup.sh"],
+    visibility = [
+        "//tectonic/private:__pkg__",
+        "//tectonic/private/tests:__pkg__",
+    ],
+)

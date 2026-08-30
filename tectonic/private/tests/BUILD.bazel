@@ -1,0 +1,19 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+package(default_visibility = ["//visibility:private"])
+
+# The checked-in test source is non-executable; Bazel generates the executable
+# runner so source mode is not part of the test contract.
+genrule(
+    name = "stage_cleanup_test_runner",
+    srcs = ["stage_cleanup_test.sh"],
+    outs = ["stage_cleanup_test_runner.sh"],
+    cmd = "cp $(location stage_cleanup_test.sh) $@ && chmod 0755 $@",
+    executable = True,
+)
+
+sh_test(
+    name = "stage_cleanup_test",
+    srcs = [":stage_cleanup_test_runner"],
+    data = ["//tectonic/private:stage_cleanup_lib"],
+)
