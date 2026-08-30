@@ -4,40 +4,80 @@ on:
   push:
     tags:
       - "v*.*.*"
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Release version without the v prefix, for example 0.2.0"
-        required: true
-        type: string
 
 permissions:
   contents: write
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install bazelisk
-        run: |
-          sudo curl -fsSL https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 -o /usr/local/bin/bazel
-          sudo chmod +x /usr/local/bin/bazel
-
-      - name: Resolve version
+      - name: Verify signed annotated release tag
         id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            VERSION="${{ inputs.version }}"
-          else
-            VERSION="${GITHUB_REF_NAME#v}"
+          set -euo pipefail
+
+          if [[ ! "${RELEASE_TAG}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "release: tag must be exact vMAJOR.MINOR.PATCH semver" >&2
+            exit 64
           fi
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          version="${BASH_REMATCH[1]}"
+
+          ref_json="$(gh api "repos/${GH_REPO}/git/ref/tags/${RELEASE_TAG}")"
+          tag_object_type="$(jq -er '.object.type' <<<"${ref_json}")"
+          tag_object_sha="$(jq -er '.object.sha' <<<"${ref_json}")"
+          if [[ "${tag_object_type}" != "tag" ]]; then
+            echo "release: ${RELEASE_TAG} is not an annotated tag object" >&2
+            exit 65
+          fi
+
+          tag_json="$(gh api "repos/${GH_REPO}/git/tags/${tag_object_sha}")"
+          jq -e '.verification.verified == true and .verification.reason == "valid"'             <<<"${tag_json}" >/dev/null
+          target_type="$(jq -er '.object.type' <<<"${tag_json}")"
+          target_sha="$(jq -er '.object.sha' <<<"${tag_json}")"
+          if [[ "${target_type}" != "commit" ]]; then
+            echo "release: signed tag does not point directly to a commit" >&2
+            exit 66
+          fi
+
+          commit_json="$(gh api "repos/${GH_REPO}/commits/${target_sha}")"
+          jq -e '.commit.verification.verified == true and .commit.verification.reason == "valid"'             <<<"${commit_json}" >/dev/null
+          canonical_main="$(gh api "repos/${GH_REPO}/commits/main" --jq '.sha')"
+          if [[ "${target_sha}" != "${canonical_main}" ]]; then
+            echo "release: signed tag target is not current canonical main" >&2
+            exit 67
+          fi
+
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${RELEASE_TAG}" >> "${GITHUB_OUTPUT}"
+          echo "target_sha=${target_sha}" >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout exact signed target
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ steps.version.outputs.target_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install checksum-pinned Bazelisk
+        env:
+          BAZELISK_VERSION: "1.29.0"
+          BAZELISK_SHA256: "5a408715e932c0250d28bd84555f12edbf70117de42f9181691c736eacc4a992"
+        run: |
+          set -euo pipefail
+          bazel_path="${RUNNER_TEMP}/bazel"
+          curl -fsSLo "${bazel_path}"             "https://github.com/bazelbuild/bazelisk/releases/download/v${BAZELISK_VERSION}/bazelisk-linux-amd64"
+          printf '%s  %s\n' "${BAZELISK_SHA256}" "${bazel_path}" | sha256sum -c -
+          chmod 0755 "${bazel_path}"
+          echo "${RUNNER_TEMP}" >> "${GITHUB_PATH}"
 
       - name: Validate
         run: |
+          set -euo pipefail
           bazel run //:buildifier.check
           bazel build //...
           bazel test //...
@@ -49,9 +89,10 @@ jobs:
       - name: Create source archive
         run: scripts/make-release-archive.sh "${{ steps.version.outputs.version }}" dist
 
-      - name: Upload release asset
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          files: dist/rules_tectonic-${{ steps.version.outputs.tag }}.tar.gz
-          generate_release_notes: true
+      - name: Publish existing verified tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release create "${RELEASE_TAG}"             "dist/rules_tectonic-${RELEASE_TAG}.tar.gz"             --verify-tag             --generate-notes             --title "${RELEASE_TAG}"
