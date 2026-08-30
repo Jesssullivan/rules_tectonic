@@ -23,11 +23,14 @@ tectonic_stage_prepare() {
     printf 'rules_tectonic: refusing HOME as temporary root\n' >&2
     return 70
   fi
-  if [[ ! -d "$tmp_root" || -L "$tmp_root" ]]; then
-    printf 'rules_tectonic: temporary root must be a real directory: %q\n' "$tmp_root" >&2
+  if [[ ! -d "$tmp_root" ]]; then
+    printf 'rules_tectonic: temporary root must be a directory: %q\n' "$tmp_root" >&2
     return 70
   fi
 
+  # /tmp is a symlink on macOS. Resolve the existing root first, then create
+  # the fresh parent under that canonical path; cleanup later requires the
+  # parent spelling to remain canonical before it can recurse into ./stage.
   tmp_root="$(cd -P -- "$tmp_root" && pwd -P)" || return 70
   if [[ -z "$tmp_root" || "$tmp_root" == "/" ]]; then
     printf 'rules_tectonic: refusing unresolved temporary root\n' >&2

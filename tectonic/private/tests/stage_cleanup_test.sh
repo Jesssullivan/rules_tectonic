@@ -40,6 +40,25 @@ OUTSIDE="$(mktemp -d "$TEST_TMPDIR/rules-tectonic-outside.XXXXXXXX")"
 OUTSIDE_SENTINEL="$OUTSIDE/sentinel"
 printf 'must survive every guarded cleanup\n' >"$OUTSIDE_SENTINEL"
 
+# TMPDIR is intentionally unset here. On macOS the /tmp default is a symlink;
+# preparation must canonicalize it before creating the owned parent.
+UNSET_TMPDIR_RECORD="$OUTSIDE/unset-tmpdir-parent"
+set +e
+(
+  set -e
+  unset TMPDIR
+  tectonic_stage_prepare
+  printf '%s\n' "$TECTONIC_STAGE_PARENT" >"$UNSET_TMPDIR_RECORD"
+  trap 'tectonic_stage_exit "$?" "$TECTONIC_STAGE_PARENT" "$TECTONIC_STAGE" "$TECTONIC_STAGE_TOKEN"' EXIT
+  printf 'compile output\n' >"$TECTONIC_STAGE/result.pdf"
+)
+UNSET_TMPDIR_STATUS=$?
+set -e
+[[ "$UNSET_TMPDIR_STATUS" -eq 0 ]] || fail "unset-TMPDIR action returned $UNSET_TMPDIR_STATUS"
+IFS= read -r UNSET_TMPDIR_PARENT <"$UNSET_TMPDIR_RECORD"
+assert_absent "$UNSET_TMPDIR_PARENT"
+assert_exists "$OUTSIDE_SENTINEL"
+
 # A successful action exits zero, removes only its fresh parent, and leaves the
 # sentinel outside that parent untouched.
 SUCCESS_RECORD="$OUTSIDE/success-parent"
@@ -162,7 +181,7 @@ rmdir -- "$REFUSAL_PARENT/stage"
 rm -f -- "$REFUSAL_PARENT/.rules_tectonic_stage_owner" "$REFUSAL_PARENT/unexpected"
 rmdir -- "$REFUSAL_PARENT"
 
-rm -f -- "$SUCCESS_RECORD" "$FAILURE_RECORD" "$REFUSAL_RECORD" "$OUTSIDE_SENTINEL"
+rm -f -- "$UNSET_TMPDIR_RECORD" "$SUCCESS_RECORD" "$FAILURE_RECORD" "$REFUSAL_RECORD" "$OUTSIDE_SENTINEL"
 rmdir -- "$FAKE_HOME"
 rmdir -- "$OUTSIDE"
 printf 'stage_cleanup_test: PASS\n'
