@@ -5,7 +5,6 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "platforms.bzl",
-    "stage_cleanup.sh",
     "tectonic_pdf.bzl",
     "tectonic_repository.bzl",
     "tectonic_toolchain.bzl",

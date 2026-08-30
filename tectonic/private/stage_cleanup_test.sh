@@ -88,6 +88,8 @@ printf 'valid stage sentinel\n' >"$VALID_SENTINEL"
 
 expect_refusal "unset arguments" tectonic_stage_cleanup
 expect_refusal "empty parent" tectonic_stage_cleanup "" "$VALID_STAGE" "$VALID_TOKEN"
+expect_refusal "empty stage" tectonic_stage_cleanup "$VALID_PARENT" "" "$VALID_TOKEN"
+expect_refusal "empty token" tectonic_stage_cleanup "$VALID_PARENT" "$VALID_STAGE" ""
 expect_refusal "parent itself as recursive target" tectonic_stage_cleanup "$VALID_PARENT" "$VALID_PARENT" "$VALID_TOKEN"
 expect_refusal "filesystem root" tectonic_stage_cleanup "/" "/stage" "$VALID_TOKEN"
 
@@ -126,7 +128,14 @@ rmdir -- "$SYMLINK_STAGE"
 ln -s -- "$OUTSIDE" "$SYMLINK_STAGE"
 expect_refusal "symlink child" tectonic_stage_cleanup "$SYMLINK_PARENT" "$SYMLINK_STAGE" "$SYMLINK_TOKEN"
 assert_exists "$OUTSIDE_SENTINEL"
-rm -f -- "$SYMLINK_STAGE"
+
+# A symlink substituted for the parent is refused before any marker or child is
+# considered.
+PARENT_SYMLINK="$OUTSIDE/rules-tectonic-stage.symlink1"
+ln -s -- "$SYMLINK_PARENT" "$PARENT_SYMLINK"
+expect_refusal "symlink parent" tectonic_stage_cleanup "$PARENT_SYMLINK" "$PARENT_SYMLINK/stage" "$SYMLINK_TOKEN"
+assert_exists "$OUTSIDE_SENTINEL"
+rm -f -- "$PARENT_SYMLINK" "$SYMLINK_STAGE"
 mkdir -- "$SYMLINK_STAGE"
 tectonic_stage_cleanup "$SYMLINK_PARENT" "$SYMLINK_STAGE" "$SYMLINK_TOKEN"
 assert_absent "$SYMLINK_PARENT"
