@@ -80,6 +80,11 @@ STAGE_PARENT="$TECTONIC_STAGE_PARENT"
 STAGE="$TECTONIC_STAGE"
 STAGE_TOKEN="$TECTONIC_STAGE_TOKEN"
 trap 'tectonic_stage_exit "$?" "$STAGE_PARENT" "$STAGE" "$STAGE_TOKEN"' EXIT
+# The synthetic HOME lives in a second, independent temp root. Keeping it
+# under the stage made the stage cleanup delete an ancestor of HOME, which a
+# host deletion guard refuses; the exit handler restores HOME first and then
+# removes both roots.
+tectonic_home_prepare
 
 # Tectonic resolves its bundle/format cache from TECTONIC_CACHE_DIR, falling
 # back to OS cache dirs derived from the invoking user's home. Inside Bazel
@@ -97,10 +102,10 @@ mkdir -p "$TECTONIC_CACHE_DIR"
 
 # Keep other home-derived lookups (user config, XDG dirs) action-private too,
 # so results do not vary with the invoking user's dotfiles.
-export HOME="$STAGE/home"
-export XDG_CACHE_HOME="$STAGE/home/.cache"
-export XDG_CONFIG_HOME="$STAGE/home/.config"
-export XDG_DATA_HOME="$STAGE/home/.local/share"
+export HOME="$TECTONIC_HOME_ROOT/home"
+export XDG_CACHE_HOME="$TECTONIC_HOME_ROOT/home/.cache"
+export XDG_CONFIG_HOME="$TECTONIC_HOME_ROOT/home/.config"
+export XDG_DATA_HOME="$TECTONIC_HOME_ROOT/home/.local/share"
 mkdir -p "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
 
 cmd=("$TECTONIC" -X compile "$SRC" --outdir "$STAGE" --keep-logs)
@@ -216,8 +221,9 @@ tectonic_pdf = rule(
     doc = """Compile a LaTeX source into a PDF using tectonic.
 
 The compile action gives Tectonic an action-private, writable cache and home
-(`TECTONIC_CACHE_DIR`, `HOME`, and XDG dirs point into the action's staging
-directory), so it works inside Bazel sandboxes where the user home is absent or
+(`TECTONIC_CACHE_DIR` points into the action's staging directory; `HOME` and
+the XDG dirs point into a separate action-owned temp root, removed only after
+HOME is restored), so it works inside Bazel sandboxes where the user home is absent or
 read-only. Bundle resources are fetched per action unless a consumer threads a
 persistent `TECTONIC_CACHE_DIR` through `--action_env` (with a matching
 `--sandbox_writable_path`), or pins resources via `bundle`/`only_cached`.""",
