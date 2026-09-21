@@ -28,8 +28,9 @@ tectonic_pdf(<a href="#tectonic_pdf-name">name</a>, <a href="#tectonic_pdf-deps"
 Compile a LaTeX source into a PDF using tectonic.
 
 The compile action gives Tectonic an action-private, writable cache and home
-(`TECTONIC_CACHE_DIR`, `HOME`, and XDG dirs point into the action's staging
-directory), so it works inside Bazel sandboxes where the user home is absent or
+(`TECTONIC_CACHE_DIR` points into the action's staging directory; `HOME` and
+the XDG dirs point into a separate action-owned temp root, removed only after
+HOME is restored), so it works inside Bazel sandboxes where the user home is absent or
 read-only. Bundle resources are fetched per action unless a consumer threads a
 persistent `TECTONIC_CACHE_DIR` through `--action_env` (with a matching
 `--sandbox_writable_path`), or pins resources via `bundle`/`only_cached`.

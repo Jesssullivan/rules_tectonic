@@ -203,4 +203,58 @@ rmdir -- "$REFUSAL_PARENT"
 rm -f -- "$UNSET_TMPDIR_RECORD" "$SUCCESS_RECORD" "$FAILURE_RECORD" "$REFUSAL_RECORD" "$INNER_SEAM_RECORD" "$OUTSIDE_SENTINEL"
 rmdir -- "$FAKE_HOME"
 rmdir -- "$OUTSIDE"
+# The synthetic HOME lives in its own root. At the moment the guarded stage
+# delete runs, HOME must already be the inherited value, not the temp home,
+# and both roots must be gone afterwards with the outside sentinel intact.
+HOME_OUTSIDE="$(mktemp -d "$TEST_TMPDIR/rules-tectonic-home-outside.XXXXXXXX")"
+HOME_OUTSIDE_SENTINEL="$HOME_OUTSIDE/sentinel"
+printf 'must survive the home cleanup\n' >"$HOME_OUTSIDE_SENTINEL"
+HOME_RECORD="$HOME_OUTSIDE/home-record"
+INHERITED_HOME="$HOME_OUTSIDE/inherited-home"
+mkdir -- "$INHERITED_HOME"
+set +e
+(
+  set -e
+  HOME="$INHERITED_HOME"
+  export HOME
+  tectonic_stage_prepare
+  tectonic_home_prepare
+  printf '%s\n%s\n' "$TECTONIC_STAGE_PARENT" "$TECTONIC_HOME_ROOT" >"$HOME_RECORD"
+  export HOME="$TECTONIC_HOME_ROOT/home"
+  mkdir -p "$HOME/.cache"
+  [[ "$HOME" != "$TECTONIC_STAGE"/* ]] || exit 91
+  tectonic_stage_cleanup_test_seam() {
+    [[ "${HOME-}" == "$INHERITED_HOME" ]] || exit 92
+    [[ "${HOME-}" != "$TECTONIC_HOME_ROOT"* ]] || exit 93
+  }
+  trap 'tectonic_stage_exit "$?" "$TECTONIC_STAGE_PARENT" "$TECTONIC_STAGE" "$TECTONIC_STAGE_TOKEN"' EXIT
+  printf 'compile output\n' >"$TECTONIC_STAGE/result.pdf"
+)
+HOME_STATUS=$?
+set -e
+[[ "$HOME_STATUS" -eq 0 ]] || fail "independent-home action returned $HOME_STATUS (91 home under stage, 92 HOME not restored, 93 HOME still inside temp root)"
+{ IFS= read -r HOME_STAGE_PARENT; IFS= read -r HOME_ROOT_RECORDED; } <"$HOME_RECORD"
+assert_absent "$HOME_STAGE_PARENT"
+assert_absent "$HOME_ROOT_RECORDED"
+assert_exists "$HOME_OUTSIDE_SENTINEL"
+assert_exists "$INHERITED_HOME"
+
+# A home root that is still the current HOME must be refused, and a root not
+# prepared by this action must be refused.
+tectonic_home_prepare
+FAKE_HOME_ROOT="$TECTONIC_HOME_ROOT"
+FAKE_HOME_TOKEN="$TECTONIC_HOME_TOKEN"
+ORIGINAL_HOME="${HOME-}"
+HOME="$FAKE_HOME_ROOT/home"
+export HOME
+expect_refusal "home root that is current HOME" tectonic_home_cleanup "$FAKE_HOME_ROOT" "$FAKE_HOME_TOKEN"
+HOME="$ORIGINAL_HOME"
+export HOME
+expect_refusal "home root with wrong token" tectonic_home_cleanup "$FAKE_HOME_ROOT" "not-the-token"
+tectonic_home_cleanup "$FAKE_HOME_ROOT" "$FAKE_HOME_TOKEN"
+assert_absent "$FAKE_HOME_ROOT"
+assert_exists "$HOME_OUTSIDE_SENTINEL"
+rm -rf -- "$HOME_OUTSIDE"
+
 printf 'stage_cleanup_test: PASS\n'
+

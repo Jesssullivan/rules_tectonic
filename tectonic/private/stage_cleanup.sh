@@ -8,6 +8,143 @@ TECTONIC_STAGE_PARENT=""
 TECTONIC_STAGE=""
 TECTONIC_STAGE_TOKEN=""
 
+# The synthetic HOME the action exports lives in its own temp root, never
+# under the stage. A deletion guard on a host (lab's tinyland-home-root-guard
+# refuses to remove a path whose realpath is HOME or an ancestor of it) would
+# otherwise refuse the stage cleanup, because HOME pointed inside it. The
+# original HOME is recorded so it can be restored before any recursive delete.
+TECTONIC_HOME_ROOT=""
+TECTONIC_HOME_TOKEN=""
+TECTONIC_ORIGINAL_HOME=""
+TECTONIC_ORIGINAL_HOME_WAS_SET=0
+
+tectonic_resolved_tmp_root() {
+  local tmp_root="${TMPDIR:-/tmp}"
+  if [[ -z "$tmp_root" || "$tmp_root" != /* || "$tmp_root" == "/" ]]; then
+    printf 'rules_tectonic: refusing unsafe temporary root: %q\n' "$tmp_root" >&2
+    return 70
+  fi
+  if [[ -n "${HOME:-}" && "$tmp_root" == "$HOME" ]]; then
+    printf 'rules_tectonic: refusing HOME as temporary root\n' >&2
+    return 70
+  fi
+  if [[ ! -d "$tmp_root" ]]; then
+    printf 'rules_tectonic: temporary root must be a directory: %q\n' "$tmp_root" >&2
+    return 70
+  fi
+  tmp_root="$(cd -P -- "$tmp_root" && pwd -P)" || return 70
+  if [[ -z "$tmp_root" || "$tmp_root" == "/" ]]; then
+    printf 'rules_tectonic: refusing unresolved temporary root\n' >&2
+    return 70
+  fi
+  if [[ -n "${HOME:-}" && "$tmp_root" == "$HOME" ]]; then
+    printf 'rules_tectonic: refusing resolved HOME as temporary root\n' >&2
+    return 70
+  fi
+  printf '%s' "$tmp_root"
+}
+
+tectonic_home_prepare() {
+  local tmp_root=""
+  local root=""
+  tmp_root="$(tectonic_resolved_tmp_root)" || return $?
+  root="$(mktemp -d "${tmp_root%/}/rules-tectonic-home.XXXXXXXX")" || return 70
+  if [[ -z "$root" || "$root" == "/" || "$root" == "$tmp_root" || -L "$root" || ! -d "$root" ]]; then
+    printf 'rules_tectonic: mktemp returned an unsafe home root: %q\n' "$root" >&2
+    [[ -n "$root" && -d "$root" && ! -L "$root" ]] && rmdir -- "$root" 2>/dev/null
+    return 70
+  fi
+  case "${root##*/}" in
+    rules-tectonic-home.????????) ;;
+    *)
+      printf 'rules_tectonic: mktemp home root has unexpected name: %q\n' "$root" >&2
+      rmdir -- "$root" 2>/dev/null
+      return 70
+      ;;
+  esac
+  if [[ -n "${HOME+x}" ]]; then
+    TECTONIC_ORIGINAL_HOME="$HOME"
+    TECTONIC_ORIGINAL_HOME_WAS_SET=1
+  else
+    TECTONIC_ORIGINAL_HOME=""
+    TECTONIC_ORIGINAL_HOME_WAS_SET=0
+  fi
+  TECTONIC_HOME_ROOT="$root"
+  TECTONIC_HOME_TOKEN="rules-tectonic-home-$$-${RANDOM:-0}-${RANDOM:-0}"
+  printf '%s\n' "$TECTONIC_HOME_TOKEN" >"$root/.rules_tectonic_home_owner" || {
+    rmdir -- "$root" 2>/dev/null
+    return 70
+  }
+  export TECTONIC_HOME_ROOT TECTONIC_HOME_TOKEN TECTONIC_ORIGINAL_HOME TECTONIC_ORIGINAL_HOME_WAS_SET
+}
+
+# Put HOME back to what the action inherited. Runs before any recursive
+# delete, so a host guard keyed on HOME never sees a temp root as HOME.
+tectonic_home_restore() {
+  if (( TECTONIC_ORIGINAL_HOME_WAS_SET == 1 )); then
+    HOME="$TECTONIC_ORIGINAL_HOME"
+    export HOME
+  else
+    unset HOME
+  fi
+}
+
+tectonic_home_cleanup() {
+  local root="${1-}"
+  local token="${2-}"
+  local marker_token=""
+  local physical_root=""
+
+  if [[ -z "$root" || -z "$token" ]]; then
+    printf 'rules_tectonic: refusing home cleanup with empty root or token\n' >&2
+    return 70
+  fi
+  if [[ "$root" != /* || "$root" == "/" ]]; then
+    printf 'rules_tectonic: refusing unsafe home root: %q\n' "$root" >&2
+    return 70
+  fi
+  if [[ -n "${HOME:-}" && ( "$root" == "$HOME" || "$HOME" == "$root"/* ) ]]; then
+    printf 'rules_tectonic: refusing to remove the current HOME: %q\n' "$root" >&2
+    return 70
+  fi
+  case "${root##*/}" in
+    rules-tectonic-home.????????) ;;
+    *)
+      printf 'rules_tectonic: refusing home root without owned mktemp shape: %q\n' "$root" >&2
+      return 70
+      ;;
+  esac
+  if [[ -L "$root" || ! -d "$root" ]]; then
+    printf 'rules_tectonic: refusing symlink or missing home root: %q\n' "$root" >&2
+    return 70
+  fi
+  if [[ "$root" != "${TECTONIC_HOME_ROOT:-}" || "$token" != "${TECTONIC_HOME_TOKEN:-}" ]]; then
+    printf 'rules_tectonic: refusing home root not prepared by this action\n' >&2
+    return 70
+  fi
+  (
+    cd -P -- "$root" || exit 70
+    physical_root="$(pwd -P)" || exit 70
+    [[ "$physical_root" == "$root" ]] || exit 70
+    [[ ! -L "./.rules_tectonic_home_owner" && -f "./.rules_tectonic_home_owner" ]] || exit 70
+    IFS= read -r marker_token <"./.rules_tectonic_home_owner" || exit 70
+    [[ -n "$marker_token" && "$marker_token" == "$token" ]] || exit 70
+    [[ ! -L "./home" ]] || exit 70
+    if [[ -d "./home" ]]; then
+      rm -rf -- "./home" || exit 70
+    fi
+    rm -f -- "./.rules_tectonic_home_owner" || exit 70
+    exit 0
+  ) || {
+    printf 'rules_tectonic: guarded home cleanup failed\n' >&2
+    return 70
+  }
+  rmdir -- "$root" || {
+    printf 'rules_tectonic: non-recursive home root cleanup failed: %q\n' "$root" >&2
+    return 70
+  }
+}
+
 tectonic_stage_prepare() {
   local tmp_root="${TMPDIR:-/tmp}"
   local parent=""
@@ -218,7 +355,13 @@ tectonic_stage_exit() {
 
   # Prevent recursion before cleanup and preserve the status that triggered EXIT.
   trap - EXIT
+  # HOME goes back to the inherited value before anything is deleted, so a
+  # host guard keyed on HOME cannot mistake a temp root for the home root.
+  tectonic_home_restore
   tectonic_stage_cleanup "$parent" "$stage" "$token" || cleanup_status=$?
+  if [[ -n "${TECTONIC_HOME_ROOT:-}" ]]; then
+    tectonic_home_cleanup "$TECTONIC_HOME_ROOT" "$TECTONIC_HOME_TOKEN" || cleanup_status=$?
+  fi
 
   if [[ ! "$action_status" =~ ^[0-9]+$ || "$action_status" -gt 255 ]]; then
     printf 'rules_tectonic: invalid action status: %q\n' "$action_status" >&2
