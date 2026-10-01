@@ -38,8 +38,12 @@ ACTION_SCRIPT="$(cat -- "$ACTION_SCRIPT_FILE")"
 
 WORK="$(cd -P -- "$TEST_TMPDIR" && pwd -P)/work"
 mkdir -p "$WORK"
+# Resolve the real tools before any shim exists. On a guarded host these may
+# themselves be wrappers that re-resolve the tool via PATH, so the shims also
+# drop their own directory from PATH before exec'ing them (no shim loop).
 REAL_RM="$(command -v rm)"
-[[ -n "$REAL_RM" ]] || fail "no rm on PATH"
+REAL_MV="$(command -v mv)"
+[[ -n "$REAL_RM" && -n "$REAL_MV" ]] || fail "no rm or mv on PATH"
 
 # The inherited HOME of the user running the build.
 USER_HOME="$WORK/user-home"
@@ -94,9 +98,39 @@ for arg in "$@"; do
     exit 2
   fi
 done
-exec "${RM_SHIM_REAL:?}" "$@"
+shim_dir="$(cd -P -- "$(dirname -- "$0")" && pwd -P)"
+clean_path=""
+IFS=: read -r -a path_parts <<<"${PATH:-}"
+for part in "${path_parts[@]}"; do
+  [[ -n "$part" && "$part" != "$shim_dir" ]] || continue
+  clean_path="${clean_path:+$clean_path:}$part"
+done
+PATH="$clean_path" exec "${RM_SHIM_REAL:?}" "$@"
 SHIM
 chmod 0755 "$SHIM_DIR/rm"
+
+# --- mv logging shim -----------------------------------------------------------
+# The action script's own mv calls run in the script body after tectonic. They
+# must see the inherited HOME/XDG/cache env, never the synthetic one: a script
+# that exported the synthetic HOME to its body would be caught here even though
+# the EXIT handler restores HOME before the rm calls.
+MV_LOG="$WORK/mv-shim.log"
+cat >"$SHIM_DIR/mv" <<'SHIM'
+#!/usr/bin/env bash
+set -u
+printf 'mv HOME=%s XDG_CACHE_HOME=%s XDG_CONFIG_HOME=%s XDG_DATA_HOME=%s TECTONIC_CACHE_DIR=%s\n' \
+  "${HOME-<unset>}" "${XDG_CACHE_HOME-<unset>}" "${XDG_CONFIG_HOME-<unset>}" \
+  "${XDG_DATA_HOME-<unset>}" "${TECTONIC_CACHE_DIR-<unset>}" >>"${MV_SHIM_LOG:?}"
+shim_dir="$(cd -P -- "$(dirname -- "$0")" && pwd -P)"
+clean_path=""
+IFS=: read -r -a path_parts <<<"${PATH:-}"
+for part in "${path_parts[@]}"; do
+  [[ -n "$part" && "$part" != "$shim_dir" ]] || continue
+  clean_path="${clean_path:+$clean_path:}$part"
+done
+PATH="$clean_path" exec "${MV_SHIM_REAL:?}" "$@"
+SHIM
+chmod 0755 "$SHIM_DIR/mv"
 
 # --- fake tectonic -----------------------------------------------------------
 FAKE_TECTONIC="$WORK/fake-tectonic"
@@ -131,27 +165,41 @@ printf 'fake log\n' >"$outdir/$stem.log"
 FAKE
 chmod 0755 "$FAKE_TECTONIC"
 
+FAILING_TECTONIC="$WORK/failing-tectonic"
+printf '#!/usr/bin/env bash\nexit 37\n' >"$FAILING_TECTONIC"
+chmod 0755 "$FAILING_TECTONIC"
+
+# Exits zero but writes no PDF: the action must still fail.
+SILENT_TECTONIC="$WORK/silent-tectonic"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$SILENT_TECTONIC"
+chmod 0755 "$SILENT_TECTONIC"
+
 SRC="$WORK/hello.tex"
 printf '\\documentclass{article}\\begin{document}x\\end{document}\n' >"$SRC"
 
 TMP_ROOT="$WORK/tmp"
 mkdir -p "$TMP_ROOT"
 
-# run_action <out-dir> [extra env assignments...]
+# run_action <tectonic> <out-dir> [extra env assignments...]
 run_action() {
-  local outdir="$1"
-  shift
+  local tectonic="$1"
+  local outdir="$2"
+  shift 2
   mkdir -p "$outdir"
+  : >"$SHIM_LOG"
+  : >"$MV_LOG"
   env -i \
     PATH="$SHIM_DIR:/bin:/usr/bin:/usr/local/bin" \
     HOME="$USER_HOME" \
     TMPDIR="$TMP_ROOT" \
     RM_SHIM_LOG="$SHIM_LOG" \
     RM_SHIM_REAL="$REAL_RM" \
+    MV_SHIM_LOG="$MV_LOG" \
+    MV_SHIM_REAL="$REAL_MV" \
     FAKE_TECTONIC_ENV_LOG="$FAKE_ENV_LOG" \
     "$@" \
     bash -c "$ACTION_SCRIPT" "" \
-    "$CLEANUP_LIB" "$FAKE_TECTONIC" "$SRC" \
+    "$CLEANUP_LIB" "$tectonic" "$SRC" \
     "$outdir/hello.pdf" hello.pdf \
     "$outdir/hello.log" hello.log \
     "" hello.synctex.gz \
@@ -170,10 +218,24 @@ env_value() {
   sed -n "s/^$1=//p" "$FAKE_ENV_LOG"
 }
 
-# --- case 1: guarded rm on PATH, build succeeds, cleanup sees inherited HOME --
-: >"$SHIM_LOG"
+# Every mv the script body ran must have seen the inherited env, unchanged.
+# expect_mv_env <expected TECTONIC_CACHE_DIR or <unset>> <min calls>
+expect_mv_env() {
+  local cache="$1"
+  local min="$2"
+  local want="mv HOME=$USER_HOME XDG_CACHE_HOME=<unset> XDG_CONFIG_HOME=<unset> XDG_DATA_HOME=<unset> TECTONIC_CACHE_DIR=$cache"
+  local count=0
+  local line=""
+  while IFS= read -r line; do
+    [[ "$line" == "$want" ]] || fail "script body ran with a remapped env: $line"
+    count=$((count + 1))
+  done <"$MV_LOG"
+  (( count >= min )) || fail "mv shim saw $count calls, expected at least $min; PATH shim not exercised"
+}
+
+# --- case 1: guarded rm on PATH, build succeeds, script keeps inherited env ---
 set +e
-run_action "$WORK/out1" 2>"$WORK/case1.stderr"
+run_action "$FAKE_TECTONIC" "$WORK/out1" 2>"$WORK/case1.stderr"
 status=$?
 set -e
 [[ "$status" -eq 0 ]] || { cat "$WORK/case1.stderr" >&2; cat "$SHIM_LOG" >&2; fail "action failed under the rm guard: status $status"; }
@@ -186,53 +248,69 @@ fi
 while IFS= read -r line; do
   [[ "$line" == "call HOME=$USER_HOME args="* ]] || fail "rm saw a HOME other than the inherited one: $line"
 done < <(grep '^call ' "$SHIM_LOG")
+expect_mv_env '<unset>' 2
 [[ "$(env_value HOME)" == "$TMP_ROOT"/rules-tectonic-home.*/home ]] || fail "tectonic HOME not action-private: $(env_value HOME)"
 [[ "$(env_value XDG_CACHE_HOME)" == "$(env_value HOME)/.cache" ]] || fail "XDG_CACHE_HOME not scoped under tectonic HOME"
 [[ "$(env_value TECTONIC_CACHE_DIR)" == "$TMP_ROOT"/rules-tectonic-stage.*/stage/cache ]] || fail "default TECTONIC_CACHE_DIR not in stage: $(env_value TECTONIC_CACHE_DIR)"
+grep -q 'rules_tectonic: warning' "$WORK/case1.stderr" && fail "clean run printed a cleanup warning"
 assert_no_temp_roots
 [[ -d "$USER_HOME" ]] || fail "inherited HOME disappeared"
 
 # --- case 2: a consumer TECTONIC_CACHE_DIR still wins --------------------------
 PERSISTENT_CACHE="$WORK/persistent-cache"
-: >"$SHIM_LOG"
-run_action "$WORK/out2" TECTONIC_CACHE_DIR="$PERSISTENT_CACHE" 2>"$WORK/case2.stderr" || {
+run_action "$FAKE_TECTONIC" "$WORK/out2" TECTONIC_CACHE_DIR="$PERSISTENT_CACHE" 2>"$WORK/case2.stderr" || {
   cat "$WORK/case2.stderr" >&2
   fail "action with consumer TECTONIC_CACHE_DIR failed"
 }
 [[ "$(env_value TECTONIC_CACHE_DIR)" == "$PERSISTENT_CACHE" ]] || fail "consumer TECTONIC_CACHE_DIR was overridden"
 [[ -f "$PERSISTENT_CACHE/probe" ]] || fail "consumer cache not used"
+expect_mv_env "$PERSISTENT_CACHE" 2
 assert_no_temp_roots
 
 # --- case 3: cleanup refused outright; a successful build still succeeds -------
-: >"$SHIM_LOG"
 set +e
-run_action "$WORK/out3" RM_SHIM_REFUSE_ALL=1 2>"$WORK/case3.stderr"
+run_action "$FAKE_TECTONIC" "$WORK/out3" RM_SHIM_REFUSE_ALL=1 2>"$WORK/case3.stderr"
 status=$?
 set -e
 [[ "$status" -eq 0 ]] || { cat "$WORK/case3.stderr" >&2; fail "refused cleanup failed a successful build: status $status"; }
 [[ -s "$WORK/out3/hello.pdf" ]] || fail "outputs missing when cleanup was refused"
 grep -q 'refused-all' "$SHIM_LOG" || fail "refuse-all shim was not exercised"
-grep -q 'rules_tectonic: warning: could not remove action temp roots' "$WORK/case3.stderr" || {
+grep -q 'rules_tectonic: warning: could not remove action temp roots: ' "$WORK/case3.stderr" || {
   cat "$WORK/case3.stderr" >&2
   fail "refused cleanup was silent"
 }
+# Both roots failed, so both are named.
+grep -q 'rules-tectonic-stage\.' "$WORK/case3.stderr" || fail "warning did not name the stage root"
+grep -q 'rules-tectonic-home\.' "$WORK/case3.stderr" || fail "warning did not name the home root"
 # Clean up what the refused run left behind, with the real rm.
 "$REAL_RM" -rf -- "$TMP_ROOT"
 mkdir -p "$TMP_ROOT"
 
 # --- case 4: a failing compile keeps its status under the guard ----------------
-FAILING_TECTONIC="$WORK/failing-tectonic"
-printf '#!/usr/bin/env bash\nexit 37\n' >"$FAILING_TECTONIC"
-chmod 0755 "$FAILING_TECTONIC"
 set +e
-env -i PATH="$SHIM_DIR:/bin:/usr/bin:/usr/local/bin" HOME="$USER_HOME" TMPDIR="$TMP_ROOT" \
-  RM_SHIM_LOG="$SHIM_LOG" RM_SHIM_REAL="$REAL_RM" \
-  bash -c "$ACTION_SCRIPT" "" "$CLEANUP_LIB" "$FAILING_TECTONIC" "$SRC" \
-  "$WORK/out4/hello.pdf" hello.pdf "$WORK/out4/hello.log" hello.log \
-  "" hello.synctex.gz "" latex -1 0 0 0 2>"$WORK/case4.stderr"
+run_action "$FAILING_TECTONIC" "$WORK/out4" 2>"$WORK/case4.stderr"
 status=$?
 set -e
 [[ "$status" -eq 37 ]] || { cat "$WORK/case4.stderr" >&2; fail "compile failure status changed: expected 37, got $status"; }
+assert_no_temp_roots
+
+# --- case 5: a failing compile with cleanup refused keeps the compile status ---
+set +e
+run_action "$FAILING_TECTONIC" "$WORK/out5" RM_SHIM_REFUSE_ALL=1 2>"$WORK/case5.stderr"
+status=$?
+set -e
+[[ "$status" -eq 37 ]] || { cat "$WORK/case5.stderr" >&2; fail "refused cleanup masked the compile status: expected 37, got $status"; }
+grep -q 'refused-all' "$SHIM_LOG" || fail "refuse-all shim was not exercised in case 5"
+"$REAL_RM" -rf -- "$TMP_ROOT"
+mkdir -p "$TMP_ROOT"
+
+# --- case 6: tectonic exits 0 but writes no PDF; the action must fail ----------
+set +e
+run_action "$SILENT_TECTONIC" "$WORK/out6" 2>"$WORK/case6.stderr"
+status=$?
+set -e
+[[ "$status" -ne 0 ]] || fail "action succeeded although no PDF was produced"
+[[ ! -e "$WORK/out6/hello.pdf" ]] || fail "a PDF appeared although tectonic wrote none"
 assert_no_temp_roots
 
 printf 'action_home_guard_test: PASS\n'

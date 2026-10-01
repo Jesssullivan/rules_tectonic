@@ -365,9 +365,16 @@ tectonic_stage_exit() {
   # before anything is deleted, and a host guard keyed on HOME cannot mistake a
   # temp root for the home root.
   tectonic_home_restore
-  tectonic_stage_cleanup "$parent" "$stage" "$token" || cleanup_status=$?
+  local failed_roots=""
+  tectonic_stage_cleanup "$parent" "$stage" "$token" || {
+    cleanup_status=$?
+    failed_roots="$(printf '%q' "$parent")"
+  }
   if [[ -n "${TECTONIC_HOME_ROOT:-}" ]]; then
-    tectonic_home_cleanup "$TECTONIC_HOME_ROOT" "$TECTONIC_HOME_TOKEN" || cleanup_status=$?
+    tectonic_home_cleanup "$TECTONIC_HOME_ROOT" "$TECTONIC_HOME_TOKEN" || {
+      cleanup_status=$?
+      failed_roots="${failed_roots:+$failed_roots }$(printf '%q' "$TECTONIC_HOME_ROOT")"
+    }
   fi
 
   if [[ ! "$action_status" =~ ^[0-9]+$ || "$action_status" -gt 255 ]]; then
@@ -380,8 +387,8 @@ tectonic_stage_exit() {
   if (( cleanup_status != 0 )); then
     # The outputs were already produced and moved into place. A refused or
     # failed temp cleanup is reported loudly but does not fail the build.
-    printf 'rules_tectonic: warning: could not remove action temp roots %q and %q (cleanup status %s); outputs are complete\n' \
-      "$parent" "${TECTONIC_HOME_ROOT:-}" "$cleanup_status" >&2
+    printf 'rules_tectonic: warning: could not remove action temp roots: %s (cleanup status %s); outputs are complete\n' \
+      "$failed_roots" "$cleanup_status" >&2
   fi
   exit 0
 }

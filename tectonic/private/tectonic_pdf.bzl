@@ -97,14 +97,11 @@ cmd+=("$@")
 # The action-private cache and home reach only the tectonic process. The
 # script itself keeps the inherited HOME, so the EXIT cleanup never deletes an
 # ancestor of the HOME it runs under.
-tectonic_env=(
-  "TECTONIC_CACHE_DIR=$ACTION_CACHE_DIR"
-  "HOME=$ACTION_HOME"
-  "XDG_CACHE_HOME=$ACTION_XDG_CACHE_HOME"
-  "XDG_CONFIG_HOME=$ACTION_XDG_CONFIG_HOME"
-  "XDG_DATA_HOME=$ACTION_XDG_DATA_HOME"
-)
-env "${tectonic_env[@]}" "${cmd[@]}" >/dev/null
+TECTONIC_CACHE_DIR="$ACTION_CACHE_DIR" HOME="$ACTION_HOME" \\
+  XDG_CACHE_HOME="$ACTION_XDG_CACHE_HOME" \\
+  XDG_CONFIG_HOME="$ACTION_XDG_CONFIG_HOME" \\
+  XDG_DATA_HOME="$ACTION_XDG_DATA_HOME" \\
+  "${cmd[@]}" >/dev/null
 mv "$STAGE/$EXPECTED" "$OUT"
 mv "$STAGE/$EXPECTED_LOG" "$LOG_OUT"
 if [[ -n "$SYNCTEX_OUT" ]]; then

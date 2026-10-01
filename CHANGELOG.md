@@ -16,10 +16,12 @@
   handler prints a `rules_tectonic: warning:` line naming the leftover roots
   and exits zero. A failing compile still keeps its exact status.
 - Add `//tectonic/private/tests:action_home_guard_test`, which runs the exact
-  action script with an `rm` guard shim and a fake Tectonic, and asserts the
-  build succeeds, the shim saw the inherited `HOME`, a consumer
-  `TECTONIC_CACHE_DIR` still wins, a refused cleanup only warns, and a failing
-  compile keeps its status.
+  action script with an `rm` guard shim, a logging `mv` shim and a fake
+  Tectonic. It asserts the build succeeds, cleanup and the script body both saw
+  the inherited `HOME`/XDG/cache env, a consumer `TECTONIC_CACHE_DIR` still
+  wins, a refused cleanup only warns (naming just the roots that failed), a
+  failing compile keeps its status with or without a refused cleanup, and a
+  compile that exits 0 without a PDF fails.
 
 ## 0.2.2 - 2026-08-30
 
