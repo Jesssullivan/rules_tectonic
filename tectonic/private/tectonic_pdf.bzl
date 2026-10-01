@@ -2,46 +2,9 @@
 
 TOOLCHAIN_TYPE = "@rules_tectonic//tectonic:toolchain_type"
 
-def _tectonic_pdf_impl(ctx):
-    if ctx.attr.reruns < -1:
-        fail("reruns must be -1 to use Tectonic's default behavior, or a non-negative integer")
-
-    toolchain = ctx.toolchains[TOOLCHAIN_TYPE]
-    tectonic = toolchain.tectonic_info.tectonic
-    tectonic_executable = tectonic.files_to_run.executable
-
-    src = ctx.file.src
-    out = ctx.actions.declare_file(ctx.attr.name + ".pdf")
-    log_out = ctx.actions.declare_file(ctx.attr.name + ".log")
-    synctex_out = ctx.actions.declare_file(ctx.attr.name + ".synctex.gz") if ctx.attr.synctex else None
-
-    inputs = depset(
-        direct = [src, ctx.file._stage_cleanup_lib] + ([ctx.file.bundle] if ctx.file.bundle else []),
-        transitive = [
-            depset(ctx.files.deps),
-            depset(ctx.files.data),
-        ],
-    )
-
-    # tectonic writes <src_basename>.pdf into --outdir. We compile into a
-    # private staging directory, then move the result to the declared output
-    # path so the Bazel-visible name can differ from the .tex basename.
-    src_basename = src.basename
-    if src_basename.endswith(".tex"):
-        expected_stem = src_basename[:-4]
-    else:
-        expected_stem = src_basename
-
-    expected_pdf = expected_stem + ".pdf"
-    expected_log = expected_stem + ".log"
-    expected_synctex = expected_stem + ".synctex.gz"
-
-    outputs = [out, log_out]
-    if synctex_out:
-        outputs.append(synctex_out)
-
-    ctx.actions.run_shell(
-        command = """
+# The compile action's shell script. Kept as a module constant so the
+# regression tests in //tectonic/private/tests run exactly this text.
+TECTONIC_ACTION_SCRIPT = """
 set -euo pipefail
 STAGE_CLEANUP_LIB="$1"
 shift
@@ -82,8 +45,9 @@ STAGE_TOKEN="$TECTONIC_STAGE_TOKEN"
 trap 'tectonic_stage_exit "$?" "$STAGE_PARENT" "$STAGE" "$STAGE_TOKEN"' EXIT
 # The synthetic HOME lives in a second, independent temp root. Keeping it
 # under the stage made the stage cleanup delete an ancestor of HOME, which a
-# host deletion guard refuses; the exit handler restores HOME first and then
-# removes both roots.
+# host deletion guard refuses. The synthetic HOME is also never exported to
+# this script: it is passed only to the tectonic process below, so the exit
+# handler always runs with the inherited HOME.
 tectonic_home_prepare
 
 # Tectonic resolves its bundle/format cache from TECTONIC_CACHE_DIR, falling
@@ -94,19 +58,20 @@ tectonic_home_prepare
 # never depends on a writable user home. A TECTONIC_CACHE_DIR threaded in by
 # the consumer (e.g. --action_env=TECTONIC_CACHE_DIR=... paired with a
 # --sandbox_writable_path for it) still wins, for persistent caching.
-if [[ -z "${TECTONIC_CACHE_DIR:-}" ]]; then
-  TECTONIC_CACHE_DIR="$STAGE/cache"
+ACTION_CACHE_DIR="${TECTONIC_CACHE_DIR:-}"
+if [[ -z "$ACTION_CACHE_DIR" ]]; then
+  ACTION_CACHE_DIR="$STAGE/cache"
 fi
-export TECTONIC_CACHE_DIR
-mkdir -p "$TECTONIC_CACHE_DIR"
+mkdir -p "$ACTION_CACHE_DIR"
 
 # Keep other home-derived lookups (user config, XDG dirs) action-private too,
-# so results do not vary with the invoking user's dotfiles.
-export HOME="$TECTONIC_HOME_ROOT/home"
-export XDG_CACHE_HOME="$TECTONIC_HOME_ROOT/home/.cache"
-export XDG_CONFIG_HOME="$TECTONIC_HOME_ROOT/home/.config"
-export XDG_DATA_HOME="$TECTONIC_HOME_ROOT/home/.local/share"
-mkdir -p "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
+# so results do not vary with the invoking user's dotfiles. These are scoped
+# to the tectonic invocation only (see below), never exported to the script.
+ACTION_HOME="$TECTONIC_HOME_ROOT/home"
+ACTION_XDG_CACHE_HOME="$ACTION_HOME/.cache"
+ACTION_XDG_CONFIG_HOME="$ACTION_HOME/.config"
+ACTION_XDG_DATA_HOME="$ACTION_HOME/.local/share"
+mkdir -p "$ACTION_XDG_CACHE_HOME" "$ACTION_XDG_CONFIG_HOME" "$ACTION_XDG_DATA_HOME"
 
 cmd=("$TECTONIC" -X compile "$SRC" --outdir "$STAGE" --keep-logs)
 if [[ -n "$FORMAT" ]]; then
@@ -129,13 +94,64 @@ if [[ "$RERUNS" != "-1" ]]; then
 fi
 cmd+=("$@")
 
-"${cmd[@]}" >/dev/null
+# The action-private cache and home reach only the tectonic process. The
+# script itself keeps the inherited HOME, so the EXIT cleanup never deletes an
+# ancestor of the HOME it runs under.
+tectonic_env=(
+  "TECTONIC_CACHE_DIR=$ACTION_CACHE_DIR"
+  "HOME=$ACTION_HOME"
+  "XDG_CACHE_HOME=$ACTION_XDG_CACHE_HOME"
+  "XDG_CONFIG_HOME=$ACTION_XDG_CONFIG_HOME"
+  "XDG_DATA_HOME=$ACTION_XDG_DATA_HOME"
+)
+env "${tectonic_env[@]}" "${cmd[@]}" >/dev/null
 mv "$STAGE/$EXPECTED" "$OUT"
 mv "$STAGE/$EXPECTED_LOG" "$LOG_OUT"
 if [[ -n "$SYNCTEX_OUT" ]]; then
   mv "$STAGE/$EXPECTED_SYNCTEX" "$SYNCTEX_OUT"
 fi
-""",
+"""
+
+def _tectonic_pdf_impl(ctx):
+    if ctx.attr.reruns < -1:
+        fail("reruns must be -1 to use Tectonic's default behavior, or a non-negative integer")
+
+    toolchain = ctx.toolchains[TOOLCHAIN_TYPE]
+    tectonic = toolchain.tectonic_info.tectonic
+    tectonic_executable = tectonic.files_to_run.executable
+
+    src = ctx.file.src
+    out = ctx.actions.declare_file(ctx.attr.name + ".pdf")
+    log_out = ctx.actions.declare_file(ctx.attr.name + ".log")
+    synctex_out = ctx.actions.declare_file(ctx.attr.name + ".synctex.gz") if ctx.attr.synctex else None
+
+    inputs = depset(
+        direct = [src, ctx.file._stage_cleanup_lib] + ([ctx.file.bundle] if ctx.file.bundle else []),
+        transitive = [
+            depset(ctx.files.deps),
+            depset(ctx.files.data),
+        ],
+    )
+
+    # tectonic writes <src_basename>.pdf into --outdir. We compile into a
+    # private staging directory, then move the result to the declared output
+    # path so the Bazel-visible name can differ from the .tex basename.
+    src_basename = src.basename
+    if src_basename.endswith(".tex"):
+        expected_stem = src_basename[:-4]
+    else:
+        expected_stem = src_basename
+
+    expected_pdf = expected_stem + ".pdf"
+    expected_log = expected_stem + ".log"
+    expected_synctex = expected_stem + ".synctex.gz"
+
+    outputs = [out, log_out]
+    if synctex_out:
+        outputs.append(synctex_out)
+
+    ctx.actions.run_shell(
+        command = TECTONIC_ACTION_SCRIPT,
         arguments = [
             ctx.file._stage_cleanup_lib.path,
             tectonic_executable.path,
@@ -222,9 +238,10 @@ tectonic_pdf = rule(
 
 The compile action gives Tectonic an action-private, writable cache and home
 (`TECTONIC_CACHE_DIR` points into the action's staging directory; `HOME` and
-the XDG dirs point into a separate action-owned temp root, removed only after
-HOME is restored), so it works inside Bazel sandboxes where the user home is absent or
-read-only. Bundle resources are fetched per action unless a consumer threads a
+the XDG dirs point into a separate action-owned temp root), so it works inside
+Bazel sandboxes where the user home is absent or read-only. These variables are
+set only on the Tectonic process, so the action's own cleanup runs with the
+inherited `HOME`. Bundle resources are fetched per action unless a consumer threads a
 persistent `TECTONIC_CACHE_DIR` through `--action_env` (with a matching
 `--sandbox_writable_path`), or pins resources via `bundle`/`only_cached`.""",
 )

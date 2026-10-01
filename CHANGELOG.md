@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 0.2.3 - 2026-10-01
+
+- Fix `tectonic_pdf` failing on hosts with a home-root deletion guard (an `rm`
+  on `PATH` that refuses `$HOME` or any ancestor of it) when the action runs
+  with `use_default_shell_env = True` and no strict action env. Through 0.2.2
+  the action exported a synthetic `HOME` inside the stage its EXIT cleanup
+  removes, so the guard refused the cleanup and the action failed after the PDF
+  was produced. The synthetic `HOME`, the XDG dirs and `TECTONIC_CACHE_DIR` are
+  now passed only to the Tectonic process; the action script keeps the
+  inherited `HOME`, and the synthetic home lives in its own temp root.
+- A successful compile no longer fails when temp cleanup is refused: the EXIT
+  handler prints a `rules_tectonic: warning:` line naming the leftover roots
+  and exits zero. A failing compile still keeps its exact status.
+- Add `//tectonic/private/tests:action_home_guard_test`, which runs the exact
+  action script with an `rm` guard shim and a fake Tectonic, and asserts the
+  build succeeds, the shim saw the inherited `HOME`, a consumer
+  `TECTONIC_CACHE_DIR` still wins, a refused cleanup only warns, and a failing
+  compile keeps its status.
+
 ## 0.2.2 - 2026-08-30
 
 - Guard `tectonic_pdf` action cleanup behind a fresh-parent ownership marker,

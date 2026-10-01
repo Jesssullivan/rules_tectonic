@@ -81,6 +81,8 @@ tectonic_home_prepare() {
 # Put HOME back to what the action inherited. Runs before any recursive
 # delete, so a host guard keyed on HOME never sees a temp root as HOME.
 tectonic_home_restore() {
+  # Nothing was recorded unless tectonic_home_prepare ran; leave HOME alone.
+  [[ -n "${TECTONIC_HOME_ROOT:-}" ]] || return 0
   if (( TECTONIC_ORIGINAL_HOME_WAS_SET == 1 )); then
     HOME="$TECTONIC_ORIGINAL_HOME"
     export HOME
@@ -354,9 +356,14 @@ tectonic_stage_exit() {
   local cleanup_status=0
 
   # Prevent recursion before cleanup and preserve the status that triggered EXIT.
+  # Cleanup failures are collected explicitly below; errexit must not turn one
+  # into the action's status.
   trap - EXIT
-  # HOME goes back to the inherited value before anything is deleted, so a
-  # host guard keyed on HOME cannot mistake a temp root for the home root.
+  set +e
+  # The action script never exports the synthetic HOME (it is scoped to the
+  # tectonic process), so this is defense in depth: HOME is the inherited value
+  # before anything is deleted, and a host guard keyed on HOME cannot mistake a
+  # temp root for the home root.
   tectonic_home_restore
   tectonic_stage_cleanup "$parent" "$stage" "$token" || cleanup_status=$?
   if [[ -n "${TECTONIC_HOME_ROOT:-}" ]]; then
@@ -370,5 +377,11 @@ tectonic_stage_exit() {
   if (( action_status != 0 )); then
     exit "$action_status"
   fi
-  exit "$cleanup_status"
+  if (( cleanup_status != 0 )); then
+    # The outputs were already produced and moved into place. A refused or
+    # failed temp cleanup is reported loudly but does not fail the build.
+    printf 'rules_tectonic: warning: could not remove action temp roots %q and %q (cleanup status %s); outputs are complete\n' \
+      "$parent" "${TECTONIC_HOME_ROOT:-}" "$cleanup_status" >&2
+  fi
+  exit 0
 }

@@ -1,4 +1,6 @@
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//tectonic/private:tectonic_pdf.bzl", "TECTONIC_ACTION_SCRIPT")
 
 package(default_visibility = ["//visibility:private"])
 
@@ -16,4 +18,29 @@ sh_test(
     name = "stage_cleanup_test",
     srcs = [":stage_cleanup_test_runner"],
     data = ["//tectonic/private:stage_cleanup_lib"],
+)
+
+# The exact action script text tectonic_pdf runs, so the guard regression test
+# exercises the shipped script rather than a copy.
+write_file(
+    name = "tectonic_action_script",
+    out = "tectonic_action_script.sh",
+    content = [TECTONIC_ACTION_SCRIPT],
+)
+
+genrule(
+    name = "action_home_guard_test_runner",
+    srcs = ["action_home_guard_test.sh"],
+    outs = ["action_home_guard_test_runner.sh"],
+    cmd = "cp $(location action_home_guard_test.sh) $@ && chmod 0755 $@",
+    executable = True,
+)
+
+sh_test(
+    name = "action_home_guard_test",
+    srcs = [":action_home_guard_test_runner"],
+    data = [
+        ":tectonic_action_script",
+        "//tectonic/private:stage_cleanup_lib",
+    ],
 )
