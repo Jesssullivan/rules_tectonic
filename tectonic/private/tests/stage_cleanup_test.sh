@@ -256,5 +256,27 @@ assert_absent "$FAKE_HOME_ROOT"
 assert_exists "$HOME_OUTSIDE_SENTINEL"
 rm -rf -- "$HOME_OUTSIDE"
 
+# A successful action whose guarded cleanup refuses still succeeds: the
+# outputs already exist, so the refusal is a loud warning, not a failure.
+SOFT_OUTSIDE="$(mktemp -d "$TEST_TMPDIR/rules-tectonic-soft-outside.XXXXXXXX")"
+SOFT_RECORD="$SOFT_OUTSIDE/soft-parent"
+SOFT_STDERR="$SOFT_OUTSIDE/stderr"
+set +e
+(
+  set -e
+  tectonic_stage_prepare
+  printf '%s\n' "$TECTONIC_STAGE_PARENT" >"$SOFT_RECORD"
+  printf 'unexpected\n' >"$TECTONIC_STAGE_PARENT/unexpected"
+  trap 'tectonic_stage_exit "$?" "$TECTONIC_STAGE_PARENT" "$TECTONIC_STAGE" "$TECTONIC_STAGE_TOKEN"' EXIT
+  printf 'compile output\n' >"$TECTONIC_STAGE/result.pdf"
+) 2>"$SOFT_STDERR"
+SOFT_STATUS=$?
+set -e
+[[ "$SOFT_STATUS" -eq 0 ]] || fail "refused cleanup failed a successful action: got $SOFT_STATUS"
+grep -q 'rules_tectonic: warning: could not remove action temp roots' "$SOFT_STDERR" || fail "refused cleanup after success was silent"
+IFS= read -r SOFT_PARENT <"$SOFT_RECORD"
+assert_exists "$SOFT_PARENT/unexpected"
+rm -rf -- "$SOFT_PARENT" "$SOFT_OUTSIDE"
+
 printf 'stage_cleanup_test: PASS\n'
 
