@@ -22,10 +22,11 @@
             gh
             jq
             buildifier
+            just
           ];
           shellHook = ''
             echo "rules_tectonic dev shell"
-            echo "  bazelisk $(bazelisk version 2>/dev/null | head -1)"
+            echo "  bazel $(cat .bazelversion 2>/dev/null || echo unknown) (.bazelversion, via bazelisk)"
             echo "  buildifier $(buildifier --version 2>/dev/null | head -1)"
             echo "  tectonic $(tectonic --version 2>/dev/null | head -1)"
           '';

@@ -91,7 +91,8 @@ curl -sL <archive-url> | openssl dgst -sha256 -binary | base64 | sed 's/^/sha256
 A `flake.nix` is provided. With direnv:
 
 ```sh
-direnv allow   # uses nix flake; provides bazelisk, tectonic, buildifier
+direnv allow   # uses nix flake; provides bazelisk, tectonic, buildifier, just
+just           # lists the maintainer check recipes
 ```
 
 ## Smoke test

@@ -13,15 +13,24 @@ with the Tectonic engine. Keep the public API small, documented, and stable:
 
 ## Validation
 
-Run the closest relevant checks before claiming completion:
+Run the closest relevant checks before claiming completion. The `Justfile`
+holds them. Each one is a local, non-qualifying Bazel run because no flywheel
+lane is enrolled:
 
-- `bazel build //...`
-- `bazel test //...`
-- `bazel run //:buildifier.check`
-- `bazel test //docs:defs_doc_test`
-- `bazel build //examples:hello`
-- `cd e2e/bzlmod && bazel build //...`
-- `cd e2e/bzlmod && bazel test //...`
+| Recipe | Runs |
+|---|---|
+| `just build` | `bazel build //...` |
+| `just test` | `bazel test //...` |
+| `just fmt-check` | `bazel run //:buildifier.check` |
+| `just docs-check` | `bazel test //docs:defs_doc_test` |
+| `just example` | `bazel build //examples:hello` |
+| `just e2e` | `bazel build //...` and `bazel test //...` in `e2e/bzlmod` |
+| `just check` | all of the above |
+
+`just` with no recipe and `just versions` start no Bazel server. Do not add a
+server-starting Bazel verb (`version`, `info`, `query`, `build` and the like) to
+the dev shell banner, `.envrc` or the first recipe. Both `.bazelrc` files set
+`startup --max_idle_secs=120`. The `e2e/bzlmod` workspace runs a second server.
 
 If Bazel cannot create its output base in the local sandbox, rerun the same
 command with the normal repo-managed environment rather than changing build
